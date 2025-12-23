@@ -9,7 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # ===== CONFIGURATION =====
 BINANCE_API_KEY = os.getenv("BINANCE_KEY", "UuTdZGp7331MhmnoukbkDW3VtF6Z9hnHMG3b75dWavAlG9e1zNbv2lBrjHkMqMpl")
 BINANCE_SECRET = os.getenv("BINANCE_SECRET", "6Rs8ef3mZarvB8I6J2ewSCZwYmmohyyUVE4020AzsqzGoQt6WNXdTwqN1jZwh2i0")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN", "8287625785:AAEr1IXBXadMg20hehUrwBoMEYaBBOY4OMU")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN", "8488789199:AAGDbx-hu2993dG5O6LJEiSN0nEpFWuVWwk")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "93372553")
 
 SYMBOL = "BTC/USDT"
