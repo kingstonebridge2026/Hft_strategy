@@ -14,11 +14,11 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5665906172")
 
 SYMBOL = "BTC/USDT"
 POSITION_SIZE = 0.001 
-# HFT Specifics
-VOLATILITY_THRESHOLD = 0.00015 # 0.015% change in 1 second to trigger
-PROFIT_TARGET = 0.0005        # 0.05% profit target per scalp
-STOP_LOSS = 0.0003            # 0.03% stop loss
+VOLATILITY_THRESHOLD = 0.00015 
+PROFIT_TARGET = 0.0005        
+STOP_LOSS = 0.0003            
 
+# Initialize exchange
 exchange = ccxt.binance({
     'apiKey': BINANCE_API_KEY,
     'secret': BINANCE_SECRET,
@@ -34,24 +34,42 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (f"⚡ <b>HFT Status (1s)</b>\n"
            f"Price: ${bot_state['last_price']:,.2f}\n"
            f"Trades Today: {bot_state['trades_today']}\n"
-           f"Active Position: {bot_state['active_trade']}")
+           f"Active Position: {bot_state['active_trade'] if bot_state['active_trade'] else 'None'}")
     await update.message.reply_text(msg, parse_mode='HTML')
+
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """FIX: Added balance command to check Testnet funds"""
+    try:
+        balance = await exchange.fetch_balance()
+        usdt = balance['total'].get('USDT', 0)
+        btc = balance['total'].get('BTC', 0)
+        msg = (f"💰 <b>Testnet Balance</b>\n"
+               f"━━━━━━━━━━━━━━\n"
+               f"<b>USDT:</b> ${usdt:,.2f}\n"
+               f"<b>BTC:</b> {btc:.6f}")
+        await update.message.reply_text(msg, parse_mode='HTML')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Balance Error: {str(e)[:100]}")
 
 # ===== HFT TRADING LOGIC =====
 async def execute_hft_trade(side, price, application):
     try:
         if side == 'BUY':
+            # Real order on Testnet
             order = await exchange.create_market_buy_order(SYMBOL, POSITION_SIZE)
             bot_state['active_trade'] = price
         else:
+            # Real order on Testnet
             order = await exchange.create_market_sell_order(SYMBOL, POSITION_SIZE)
             bot_state['active_trade'] = None
         
         bot_state['trades_today'] += 1
-        msg = f"⚡ <b>HFT {side}</b> at ${price:,.2f}"
+        emoji = "🚀" if side == 'BUY' else "🏁"
+        msg = f"{emoji} <b>HFT {side}</b> at ${price:,.2f}"
         await application.bot.send_message(TELEGRAM_CHAT_ID, msg, parse_mode='HTML')
     except Exception as e:
         print(f"Trade Error: {e}")
+        await application.bot.send_message(TELEGRAM_CHAT_ID, f"⚠️ Trade Failed: {str(e)[:50]}")
 
 async def hft_loop(application):
     print("HFT 1s Loop Started...")
@@ -59,21 +77,18 @@ async def hft_loop(application):
     
     while True:
         try:
-            # 1. Fetch Ticker (Fastest data point)
             ticker = await exchange.fetch_ticker(SYMBOL)
             curr_price = ticker['last']
             bot_state['last_price'] = curr_price
 
             if prev_price > 0:
-                # 2. Calculate 1-second price change
                 change = (curr_price - prev_price) / prev_price
 
-                # 3. Strategy: Momentum Burst
-                # If price jumps up fast and we have no position -> BUY
+                # Entry Logic
                 if change > VOLATILITY_THRESHOLD and not bot_state['active_trade']:
                     await execute_hft_trade('BUY', curr_price, application)
 
-                # 4. Strategy: Exit Logic (Take Profit / Stop Loss)
+                # Exit Logic
                 elif bot_state['active_trade']:
                     entry = bot_state['active_trade']
                     profit_pct = (curr_price - entry) / entry
@@ -82,18 +97,36 @@ async def hft_loop(application):
                         await execute_hft_trade('SELL', curr_price, application)
 
             prev_price = curr_price
-            # No sleep or very minimal sleep for HFT
             await asyncio.sleep(1) 
 
         except Exception as e:
+            print(f"Loop error: {e}")
             await asyncio.sleep(1)
 
-if __name__ == "__main__":
+# ===== MODERN STARTUP =====
+async def main():
+    # 1. Build Application
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # 2. Add Handlers
     application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("balance", balance_command))
     
-    loop = asyncio.get_event_loop()
-    loop.create_task(hft_loop(application))
+    # 3. Start HFT Loop as a background task
+    asyncio.create_task(hft_loop(application))
     
-    print("HFT Bot Online...")
-    application.run_polling()
+    # 4. Start Telegram Bot with conflict protection
+    print("HFT Bot Online & Listening...")
+    async with application:
+        await application.initialize()
+        await application.start()
+        # drop_pending_updates=True avoids processing old commands on restart
+        await application.updater.start_polling(drop_pending_updates=True)
+        while True:
+            await asyncio.sleep(3600)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("Bot shut down.")
